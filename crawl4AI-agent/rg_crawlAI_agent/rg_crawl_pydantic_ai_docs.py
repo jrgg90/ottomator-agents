@@ -30,6 +30,7 @@ class ProcessedChunk:
     title: str
     summary: str
     content: str
+    marketplace: str
     metadata: Dict[str, Any]
     embedding: List[float]
 
@@ -99,6 +100,41 @@ async def get_title_and_summary(chunk: str, url: str) -> Dict[str, str]:
     except Exception as e:
         print(f"Error getting title and summary: {e}")
         return {"title": "Error processing title", "summary": "Error processing summary"}
+    
+async def get_metadata_classification(chunk: str, url: str) -> Dict[str, Any]:
+    """Extract metadata classification using GPT-4."""
+    system_prompt = """You are an AI that analyzes e-commerce content and classifies it.
+    Analyze the provided content and return a JSON object with the following fields:
+    - marketplace: Which platform this content is about ('amazon', 'ebay', 'etsy', or 'general')
+    - category: Main topic category ('shipping', 'taxes', 'listing', 'account_setup', 'payments', etc.)
+    - subcategory: More specific topic ('customs', 'vat', 'product_photos', 'account_verification', etc.)
+    - countries: Array of relevant countries, focus on ['mexico', 'us'] for cross-border selling
+    - content_type: Type of content ('official_docs', 'guide', 'tutorial', 'experience', etc.)
+    - relevance_score: Number from 0.0 to 1.0 indicating relevance for cross-border selling from Mexico to US
+    
+    Be precise and consistent with your classifications."""
+    
+    try:
+        response = await openai_client.chat.completions.create(
+            model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"URL: {url}\n\nContent:\n{chunk[:1500]}..."}  # Send first 1500 chars for context
+            ],
+            response_format={ "type": "json_object" }
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"Error getting metadata classification: {e}")
+        # Return default values if classification fails
+        return {
+            "marketplace": "general",
+            "category": "uncategorized",
+            "subcategory": "uncategorized",
+            "countries": ["mexico", "us"],
+            "content_type": "unknown",
+            "relevance_score": 0.5
+        }
 
 async def get_embedding(text: str) -> List[float]:
     """Get embedding vector from OpenAI."""
@@ -119,13 +155,23 @@ async def process_chunk(chunk: str, chunk_number: int, url: str) -> ProcessedChu
     
     # Get embedding
     embedding = await get_embedding(chunk)
+    # Get metadata classification
+    metadata_classification = await get_metadata_classification(chunk, url)
+
+    # Extract marketplace for the dedicated column
+    marketplace = metadata_classification.get("marketplace", "general")    
     
     # Create metadata
     metadata = {
         "source": "pydantic_ai_docs",
         "chunk_size": len(chunk),
         "crawled_at": datetime.now(timezone.utc).isoformat(),
-        "url_path": urlparse(url).path
+        "url_path": urlparse(url).path,
+        "category": metadata_classification.get("category"),
+        "subcategory": metadata_classification.get("subcategory"),
+        "countries": metadata_classification.get("countries", []),
+        "content_type": metadata_classification.get("content_type"),
+        "relevance_score": metadata_classification.get("relevance_score", 0.0)
     }
     
     return ProcessedChunk(
@@ -134,6 +180,7 @@ async def process_chunk(chunk: str, chunk_number: int, url: str) -> ProcessedChu
         title=extracted['title'],
         summary=extracted['summary'],
         content=chunk,  # Store the original chunk content
+        marketplace=marketplace,
         metadata=metadata,
         embedding=embedding
     )
@@ -147,6 +194,7 @@ async def insert_chunk(chunk: ProcessedChunk):
             "title": chunk.title,
             "summary": chunk.summary,
             "content": chunk.content,
+            "marketplace": chunk.marketplace,
             "metadata": chunk.metadata,
             "embedding": chunk.embedding
         }

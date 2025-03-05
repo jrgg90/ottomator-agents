@@ -19,6 +19,26 @@ create table site_pages (
     unique(url, chunk_number)
 );
 
+create table user_conversations (
+    id bigserial primary key,
+    user_id uuid references auth.users(id) on delete cascade,
+    session_id text not null,  -- Para agrupar conversaciones relacionadas
+    question text not null,
+    answer text not null,
+    marketplace varchar,  -- Para filtrar conversaciones por marketplace
+    sources jsonb,  -- Para guardar las fuentes usadas en la respuesta
+    created_at timestamp with time zone default timezone('utc', now()) not null
+);
+
+-- Tabla para almacenar imágenes de conversaciones
+create table conversation_images (
+    id bigserial primary key,
+    conversation_id bigint references user_conversations(id) on delete cascade,
+    image_url text not null,  -- URL de la imagen en almacenamiento (ej. Supabase Storage)
+    image_analysis text,      -- Análisis o descripción de la imagen (generado por IA)
+    created_at timestamp with time zone default timezone('utc', now()) not null
+);
+
 -- Create an index for better vector similarity search performance
 create index on site_pages using ivfflat (embedding vector_cosine_ops);
 
@@ -35,7 +55,6 @@ create index idx_user_conversations_marketplace on user_conversations(marketplac
 
 -- Index for conversation_images
 create index idx_conversation_images_conversation_id on conversation_images(conversation_id);
-
 
 -- Create a function to search for documentation chunks
 create or replace function match_site_pages (
@@ -76,26 +95,6 @@ begin
   limit match_count;
 end;
 $$;
-
-create table user_conversations (
-    id bigserial primary key,
-    user_id uuid references auth.users(id) on delete cascade,
-    session_id text not null,  -- Para agrupar conversaciones relacionadas
-    question text not null,
-    answer text not null,
-    marketplace varchar,  -- Para filtrar conversaciones por marketplace
-    sources jsonb,  -- Para guardar las fuentes usadas en la respuesta
-    created_at timestamp with time zone default timezone('utc', now()) not null
-);
-
--- Tabla para almacenar imágenes de conversaciones
-create table conversation_images (
-    id bigserial primary key,
-    conversation_id bigint references user_conversations(id) on delete cascade,
-    image_url text not null,  -- URL de la imagen en almacenamiento (ej. Supabase Storage)
-    image_analysis text,      -- Análisis o descripción de la imagen (generado por IA)
-    created_at timestamp with time zone default timezone('utc', now()) not null
-);
 
 -- Everything above will work for any PostgreSQL database. The below commands are for Supabase security
 
