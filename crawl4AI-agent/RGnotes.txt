@@ -1,0 +1,17 @@
+NOTAS SOBRE ESTA CARPETA
+
+REFERENCIAS: https://www.youtube.com/watch?v=_R-ff4ZMLC8&t=1689s
+THE FUTURE OF RAG IS AGENTIC - BY COLE MELIN
+
+El objetivo aquí es crear un agente que pueda:
+1. Leer websites automáticamente, lo que hace es descargar la información con Crawl4AI, guardarla en un Supabase o en algún lugar, y luego el LLM puede acceder.
+
+Hoy, 4 de marzo, lo que me imagino que vamos a hacer con esto son loas investigaciones 
+de mercado para un proyecto de un cliente. Podemos leer:
+
+ITC, Google Market Finder, GlobalHelp Desk. Descargar la informaciónY así poder dar un agente de IA   
+de soporte para el cliente.
+
+Es decir, hacemos el reporte, y luego ofrecemos el agente.... esto es para el agente.
+Alo mejor también así podemos podner algo de ifo de Shopify y de Amazon,, etc....
+
