@@ -2,7 +2,6 @@ from __future__ import annotations as _annotations
 
 from dataclasses import dataclass
 from dotenv import load_dotenv
-import logfire
 import asyncio
 import httpx
 import os
@@ -18,7 +17,17 @@ load_dotenv()
 llm = os.getenv('LLM_MODEL', 'gpt-4o-mini')
 model = OpenAIModel(llm)
 
-logfire.configure(send_to_logfire='if-token-present')
+try:
+    import logfire
+    logfire.configure(send_to_logfire='if-token-present')
+except ImportError:
+    print("Logfire no está instalado. La funcionalidad de logging estará limitada.")
+    # Crear un objeto ficticio para evitar errores
+    class DummyLogfire:
+        @staticmethod
+        def configure(*args, **kwargs):
+            pass
+    logfire = DummyLogfire
 
 @dataclass
 class PydanticAIDeps:
@@ -26,17 +35,21 @@ class PydanticAIDeps:
     openai_client: AsyncOpenAI
 
 system_prompt = """
-You are an expert at Pydantic AI - a Python AI agent framework that you have access to all the documentation to,
-including examples, an API reference, and other resources to help you build Pydantic AI agents.
+You are an expert advisor on cross-border e-commerce, specializing in helping Mexican sellers expand to US marketplaces including Amazon, eBay, and Etsy.
 
-Your only job is to assist with this and you don't answer other questions besides describing what you are able to do.
+Your knowledge comes from official documentation, seller guides, and best practices for international selling. You have access to detailed information about shipping, taxes, listing optimization, account setup, payments, and other critical aspects of cross-border selling.
 
-Don't ask the user before taking an action, just do it. Always make sure you look at the documentation with the provided tools before answering the user's question unless you have already.
+When responding to questions:
+1. Always search for the most relevant information in your knowledge base first
+2. Provide specific, actionable advice tailored to Mexican sellers entering the US market
+3. Cite your sources and mention which marketplace (Amazon, eBay, Etsy) the information comes from
+4. Clarify when policies differ between marketplaces
+5. Be honest when you don't have specific information on a topic
+6. Be patient and understanding with the user, if stuck, akcknoledge that you are an expert advisor and you are here to help.
 
-When you first look at the documentation, always start with RAG.
-Then also always check the list of available documentation pages and retrieve the content of page(s) if it'll help.
+Your goal is to help sellers navigate the complexities of international e-commerce with accurate, practical guidance. Focus on compliance requirements, best practices, and strategies that minimize costs and maximize success rates.
 
-Always let the user know when you didn't find the answer in the documentation or the right URL - be honest.
+When answering, structure your responses clearly with headings and bullet points when appropriate. Include specific steps, requirements, or processes when available.
 """
 
 pydantic_ai_expert = Agent(
@@ -59,14 +72,14 @@ async def get_embedding(text: str, openai_client: AsyncOpenAI) -> List[float]:
         return [0] * 1536  # Return zero vector on error
 
 @pydantic_ai_expert.tool
-async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_query: str) -> str:
+async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_query: str, marketplace: str = 'general') -> str:
     """
     Retrieve relevant documentation chunks based on the query with RAG.
     
     Args:
         ctx: The context including the Supabase client and OpenAI client
         user_query: The user's question or query
-        
+        marketplace: The marketplace to filter the documentation by
     Returns:
         A formatted string containing the top 5 most relevant documentation chunks
     """
@@ -80,7 +93,7 @@ async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_
             {
                 'query_embedding': query_embedding,
                 'match_count': 5,
-                'filter': {'source': 'pydantic_ai_docs'}
+                'marketplace_filter': marketplace,
             }
         ).execute()
         
@@ -90,10 +103,14 @@ async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_
         # Format the results
         formatted_chunks = []
         for doc in result.data:
+            # Incluir el marketplace en el encabezado
+            marketplace_info = f"[{doc['marketplace'].upper()}]" if 'marketplace' in doc else ""
             chunk_text = f"""
-# {doc['title']}
+# {doc['title']} {marketplace_info}
 
 {doc['content']}
+
+Source: {doc['url']}
 """
             formatted_chunks.append(chunk_text)
             
@@ -105,30 +122,54 @@ async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_
         return f"Error retrieving documentation: {str(e)}"
 
 @pydantic_ai_expert.tool
-async def list_documentation_pages(ctx: RunContext[PydanticAIDeps]) -> List[str]:
+async def list_documentation_pages(ctx: RunContext[PydanticAIDeps], marketplace: str = None) -> str:
     """
-    Retrieve a list of all available Pydantic AI documentation pages.
+    Retrieve a list of all available documentation pages, optionally filtered by marketplace.
     
+    Args:
+        ctx: The context including the Supabase client
+        marketplace: Optional marketplace to filter by (Amazon, eBay, Etsy, or general)
+
     Returns:
-        List[str]: List of unique URLs for all documentation pages
+        str: Formatted list of documentation pages grouped by marketplace
     """
     try:
-        # Query Supabase for unique URLs where source is pydantic_ai_docs
-        result = ctx.deps.supabase.from_('site_pages') \
-            .select('url') \
-            .eq('metadata->>source', 'pydantic_ai_docs') \
-            .execute()
+        # Build query
+        query = ctx.deps.supabase.from_('site_pages').select('url, marketplace, title').distinct('url')
+        
+        # Apply marketplace filter if provided
+        if marketplace:
+            query = query.eq('marketplace', marketplace.lower())
+            
+        # Execute query
+        result = query.execute()
         
         if not result.data:
-            return []
+            return "No documentation pages found."
             
-        # Extract unique URLs
-        urls = sorted(set(doc['url'] for doc in result.data))
-        return urls
+        # Group by marketplace
+        pages_by_marketplace = {}
+        for doc in result.data:
+            mkt = doc.get('marketplace', 'general').upper()
+            if mkt not in pages_by_marketplace:
+                pages_by_marketplace[mkt] = []
+            
+            title = doc.get('title', 'Untitled')
+            url = doc.get('url', '')
+            pages_by_marketplace[mkt].append(f"- [{title}]({url})")
+        
+        # Format the output
+        output = ["# Available Documentation Pages"]
+        
+        for mkt, pages in sorted(pages_by_marketplace.items()):
+            output.append(f"\n## {mkt}")
+            output.extend(pages)
+            
+        return "\n".join(output)
         
     except Exception as e:
         print(f"Error retrieving documentation pages: {e}")
-        return []
+        return f"Error retrieving documentation pages: {str(e)}"
 
 @pydantic_ai_expert.tool
 async def get_page_content(ctx: RunContext[PydanticAIDeps], url: str) -> str:
@@ -147,7 +188,6 @@ async def get_page_content(ctx: RunContext[PydanticAIDeps], url: str) -> str:
         result = ctx.deps.supabase.from_('site_pages') \
             .select('title, content, chunk_number') \
             .eq('url', url) \
-            .eq('metadata->>source', 'pydantic_ai_docs') \
             .order('chunk_number') \
             .execute()
         

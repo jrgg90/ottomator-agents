@@ -163,7 +163,7 @@ async def process_chunk(chunk: str, chunk_number: int, url: str) -> ProcessedChu
     
     # Create metadata
     metadata = {
-        "source": "pydantic_ai_docs",
+        "source": marketplace,
         "chunk_size": len(chunk),
         "crawled_at": datetime.now(timezone.utc).isoformat(),
         "url_path": urlparse(url).path,
@@ -251,7 +251,7 @@ async def crawl_parallel(urls: List[str], max_concurrent: int = 5):
                 )
                 if result.success:
                     print(f"Successfully crawled: {url}")
-                    await process_and_store_document(url, result.markdown_v2.raw_markdown)
+                    await process_and_store_document(url, result.markdown.raw_markdown)
                 else:
                     print(f"Failed: {url} - Error: {result.error_message}")
         
@@ -281,12 +281,21 @@ def get_pydantic_ai_docs_urls() -> List[str]:
 
 async def main():
     # Get URLs from Pydantic AI docs
-    urls = get_pydantic_ai_docs_urls()
-    if not urls:
-        print("No URLs found to crawl")
-        return
+    #urls = get_pydantic_ai_docs_urls()
+    #if not urls:
+    #    print("No URLs found to crawl")
+    #    return
     
-    print(f"Found {len(urls)} URLs to crawl")
+    #print(f"Found {len(urls)} URLs to crawl")
+    #await crawl_parallel(urls)
+
+    # URL de prueba individual
+    test_url = "https://sellercentral.amazon.com/help/hub/reference/external/G200421970?initialSessionID=142-5217733-2382533&ld=NSGoogle%2Fsitemap.xml"
+    
+    # Crear una lista con una sola URL
+    urls = [test_url]
+    
+    print(f"Crawling test URL: {test_url}")
     await crawl_parallel(urls)
 
 if __name__ == "__main__":
