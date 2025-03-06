@@ -63,13 +63,13 @@ async def ask_question(request: QueryRequest):
         agent_result = await pydantic_ai_expert.run(request.query, deps=deps)
         
         # Extraer la respuesta de texto del resultado
-        if hasattr(agent_result, 'output'):
-            response = agent_result.output
-        elif hasattr(agent_result, 'result'):
-            response = agent_result.result
-        else:
-            # Si no podemos encontrar la respuesta, convertimos el objeto a string
-            response = str(agent_result)
+        try:
+            # Intentar obtener directamente el atributo 'data'
+            response = agent_result.data
+        except AttributeError:
+            # Si no existe 'data', usar un mensaje genérico
+            print("No se pudo extraer 'data' del resultado del agente")
+            response = "Lo siento, no pude procesar tu consulta correctamente."
         
         # Extraer métricas de uso
         total_tokens = 0
