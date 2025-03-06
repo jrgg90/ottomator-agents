@@ -71,9 +71,27 @@ async def ask_question(request: QueryRequest):
             # Si no podemos encontrar la respuesta, convertimos el objeto a string
             response = str(agent_result)
         
-        # Enfoque simple para métricas
-        total_tokens = 0  # Por ahora, no podemos obtener los tokens reales
-        execution_time = 0  # Por ahora, no podemos obtener el tiempo real
+        # Extraer métricas de uso
+        total_tokens = 0
+        execution_time = 0
+
+        # Obtener información de uso
+        if hasattr(agent_result, 'usage'):
+            try:
+                # usage es un método, necesitamos llamarlo
+                usage_data = agent_result.usage()
+                print(f"Usage data type: {type(usage_data)}")
+                print(f"Usage data: {usage_data}")
+                
+                # Intentar extraer total_tokens de diferentes maneras
+                if hasattr(usage_data, 'total_tokens'):
+                    total_tokens = usage_data.total_tokens
+                elif isinstance(usage_data, dict) and 'total_tokens' in usage_data:
+                    total_tokens = usage_data['total_tokens']
+                
+                print(f"Total tokens: {total_tokens}")
+            except Exception as e:
+                print(f"Error al llamar a usage(): {e}")
 
         # Imprimir información de debugging
         print(f"Agent result type: {type(agent_result)}")
